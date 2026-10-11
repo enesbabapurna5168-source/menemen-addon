@@ -1,6 +1,9 @@
 package com.menemen.addon;
 
 import com.menemen.addon.modules.BaseFinderESP;
+import com.menemen.addon.modules.ChunkFinder;
+import com.menemen.addon.modules.MenemenDebug;
+import com.menemen.addon.modules.SusChunkFinder;
 import com.mojang.logging.LogUtils;
 import meteordevelopment.meteorclient.addons.GithubRepo;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
@@ -16,6 +19,9 @@ public class MenemenAddon extends MeteorAddon {
     public void onInitialize() {
         LOG.info("Menemen Addon yukleniyor");
         Modules.get().add(new BaseFinderESP());
+        Modules.get().add(new ChunkFinder());
+        Modules.get().add(new SusChunkFinder());
+        Modules.get().add(new MenemenDebug());
     }
 
     @Override
