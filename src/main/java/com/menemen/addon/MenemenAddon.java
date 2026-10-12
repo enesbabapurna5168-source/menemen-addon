@@ -2,7 +2,10 @@ package com.menemen.addon;
 
 import com.menemen.addon.modules.BaseFinderESP;
 import com.menemen.addon.modules.ChunkFinder;
+import com.menemen.addon.modules.DebrisESP;
 import com.menemen.addon.modules.MenemenDebug;
+import com.menemen.addon.modules.RtpBaseFinder;
+import com.menemen.addon.modules.SeedChunkFinder;
 import com.menemen.addon.modules.SusChunkFinder;
 import com.mojang.logging.LogUtils;
 import meteordevelopment.meteorclient.addons.GithubRepo;
@@ -22,6 +25,9 @@ public class MenemenAddon extends MeteorAddon {
         Modules.get().add(new ChunkFinder());
         Modules.get().add(new SusChunkFinder());
         Modules.get().add(new MenemenDebug());
+        Modules.get().add(new DebrisESP());
+        Modules.get().add(new RtpBaseFinder());
+        Modules.get().add(new SeedChunkFinder());
     }
 
     @Override

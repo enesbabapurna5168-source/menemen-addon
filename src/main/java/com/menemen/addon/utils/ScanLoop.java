@@ -9,26 +9,64 @@ import java.util.function.BiConsumer;
 import java.util.function.LongConsumer;
 
 /**
- * Chunk tarama dongusu: her tickte butce kadar chunk tarar, en eski taranani once secer,
- * menzil disina cikan chunklari unutturur.
+ * Chunk tarama dongusu.
+ *
+ * - Taranacak chunklar bir kuyrukta tutulur: once hic taranmamislar, hepsi icinde en yakin olan basta.
+ * - Her tickte hem chunk sayisi hem sure (ms) siniri vardir, boylece FPS dusmez.
+ * - Menzil disina cikan chunklar unutulur.
+ *
+ * Istemci sadece sunucunun gonderdigi (yuklu) chunklari bilir; yukleme mesafesini asan bolge taranamaz.
  */
 public class ScanLoop {
+    private static final int DEFAULT_BUDGET_MS = 4;
+    private static final int REBUILD_INTERVAL = 10;
+
     private final Map<Long, Integer> lastScan = new HashMap<>();
+    private final ArrayDeque<ChunkPos> queue = new ArrayDeque<>();
     private int tickCounter;
 
     public void reset() {
         lastScan.clear();
+        queue.clear();
         tickCounter = 0;
     }
 
-    /** Bu tickte taranan chunk sayisini dondurur. */
     public int tick(MinecraftClient mc, int radius, int perTick, int rescan,
+                    LongConsumer forget, BiConsumer<ChunkPos, Chunk> process) {
+        return tick(mc, radius, perTick, rescan, DEFAULT_BUDGET_MS, forget, process);
+    }
+
+    /** Bu tickte taranan chunk sayisini dondurur. */
+    public int tick(MinecraftClient mc, int radius, int perTick, int rescan, int budgetMs,
                     LongConsumer forget, BiConsumer<ChunkPos, Chunk> process) {
         if (mc.world == null || mc.player == null) return 0;
         tickCounter++;
 
-        ChunkPos center = mc.player.getChunkPos();
+        if (tickCounter % REBUILD_INTERVAL == 1) {
+            rebuild(mc, mc.player.getChunkPos(), radius, rescan, forget);
+        }
 
+        long deadline = System.nanoTime() + budgetMs * 1_000_000L;
+        int done = 0;
+
+        while (!queue.isEmpty() && done < perTick) {
+            ChunkPos cp = queue.pollFirst();
+            if (!mc.world.getChunkManager().isChunkLoaded(cp.x, cp.z)) continue;
+
+            lastScan.put(cp.toLong(), tickCounter);
+            Chunk chunk = mc.world.getChunk(cp.x, cp.z);
+            if (chunk == null) continue;
+
+            process.accept(cp, chunk);
+            done++;
+
+            if (System.nanoTime() >= deadline) break;
+        }
+        return done;
+    }
+
+    private void rebuild(MinecraftClient mc, ChunkPos center, int radius, int rescan, LongConsumer forget) {
+        // Menzil disina cikanlari unut.
         Iterator<Long> keys = lastScan.keySet().iterator();
         while (keys.hasNext()) {
             long key = keys.next();
@@ -40,6 +78,7 @@ public class ScanLoop {
             }
         }
 
+        // Taranmasi gerekenleri topla: hic taranmamis veya suresi dolmus.
         List<ChunkPos> candidates = new ArrayList<>();
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
@@ -53,18 +92,17 @@ public class ScanLoop {
             }
         }
 
-        candidates.sort(Comparator.comparingInt(c -> lastScan.getOrDefault(c.toLong(), Integer.MIN_VALUE)));
+        // Once hic taranmamislar, sonra en yakin olanlar.
+        candidates.sort(
+            Comparator.comparingInt((ChunkPos c) -> lastScan.containsKey(c.toLong()) ? 1 : 0)
+                .thenComparingInt(c -> {
+                    int dx = c.x - center.x;
+                    int dz = c.z - center.z;
+                    return dx * dx + dz * dz;
+                })
+        );
 
-        int budget = perTick;
-        int done = 0;
-        for (ChunkPos cp : candidates) {
-            if (budget-- <= 0) break;
-            lastScan.put(cp.toLong(), tickCounter);
-            Chunk chunk = mc.world.getChunk(cp.x, cp.z);
-            if (chunk == null) continue;
-            process.accept(cp, chunk);
-            done++;
-        }
-        return done;
+        queue.clear();
+        queue.addAll(candidates);
     }
 }

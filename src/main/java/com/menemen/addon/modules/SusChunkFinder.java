@@ -61,7 +61,7 @@ public class SusChunkFinder extends Module {
 
     private final Setting<Integer> chunkRadius = sgGeneral.add(new IntSetting.Builder()
         .name("chunk-yaricapi")
-        .defaultValue(10)
+        .defaultValue(32)
         .range(1, 32)
         .sliderRange(1, 32)
         .build()
@@ -69,9 +69,9 @@ public class SusChunkFinder extends Module {
 
     private final Setting<Integer> chunksPerTick = sgGeneral.add(new IntSetting.Builder()
         .name("tick-basina-chunk")
-        .defaultValue(2)
-        .range(1, 16)
-        .sliderRange(1, 8)
+        .defaultValue(16)
+        .range(1, 64)
+        .sliderRange(1, 32)
         .build()
     );
 
