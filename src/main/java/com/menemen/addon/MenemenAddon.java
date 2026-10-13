@@ -3,6 +3,7 @@ package com.menemen.addon;
 import com.menemen.addon.modules.BaseFinderESP;
 import com.menemen.addon.modules.ChunkFinder;
 import com.menemen.addon.modules.DebrisESP;
+import com.menemen.addon.modules.FreecamMine;
 import com.menemen.addon.modules.MenemenDebug;
 import com.menemen.addon.modules.RtpBaseFinder;
 import com.menemen.addon.modules.SeedChunkFinder;
@@ -28,6 +29,7 @@ public class MenemenAddon extends MeteorAddon {
         Modules.get().add(new DebrisESP());
         Modules.get().add(new RtpBaseFinder());
         Modules.get().add(new SeedChunkFinder());
+        Modules.get().add(new FreecamMine());
     }
 
     @Override

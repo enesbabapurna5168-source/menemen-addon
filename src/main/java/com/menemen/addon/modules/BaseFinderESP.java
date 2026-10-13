@@ -3,7 +3,9 @@ package com.menemen.addon.modules;
 import com.menemen.addon.MenemenAddon;
 import com.menemen.addon.utils.BaseBlocks;
 import com.menemen.addon.utils.BlockScan;
+import com.menemen.addon.utils.PosCache;
 import com.menemen.addon.utils.ScanLoop;
+import com.menemen.addon.utils.Unnatural;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -20,7 +22,8 @@ import java.util.*;
 
 /**
  * Base bulmak icin ESP. Yuklu chunklardaki oyuncu yapimi bloklari secilen Y araliginda
- * (varsayilan -64 .. 320) vurgular. En yakin chunklardan baslayip disa dogru tarar.
+ * (varsayilan -64 .. 320) vurgular. En yakin chunklardan baslayip disa dogru tarar,
+ * cizim limiti dolunca en yakin bloklari cizer.
  *
  * Tamamen istemci tarafinda calisir: sunucuya hicbir paket gondermez, sadece
  * zaten yuklenmis chunk verisini okuyup cizer.
@@ -34,6 +37,20 @@ public class BaseFinderESP extends Module {
         .name("bloklar")
         .description("Vurgulanacak bloklar.")
         .defaultValue(BaseBlocks.all())
+        .build()
+    );
+
+    private final Setting<Boolean> includeBuilding = sgGeneral.add(new BoolSetting.Builder()
+        .name("yapi-bloklarini-ekle")
+        .description("Tahta, tugla, cam, beton, yun, kapi, merdiven gibi yapi bloklarini da goster. Cok blok cikabilir.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Boolean> includeValuable = sgGeneral.add(new BoolSetting.Builder()
+        .name("degerli-bloklari-ekle")
+        .description("Elmas, netherite, altin, demir, zumrut blogu gibi depolama bloklarini da goster.")
+        .defaultValue(true)
         .build()
     );
 
@@ -66,7 +83,7 @@ public class BaseFinderESP extends Module {
 
     private final Setting<Integer> chunksPerTick = sgGeneral.add(new IntSetting.Builder()
         .name("tick-basina-chunk")
-        .description("Her tickte en fazla taranacak chunk sayisi. Sure siniri (4 ms) ayrica FPS'i korur.")
+        .description("Her tickte en fazla taranacak chunk sayisi.")
         .defaultValue(16)
         .range(1, 64)
         .sliderRange(1, 32)
@@ -76,7 +93,7 @@ public class BaseFinderESP extends Module {
     private final Setting<Integer> budgetMs = sgGeneral.add(new IntSetting.Builder()
         .name("tarama-butcesi-ms")
         .description("Her tickte taramaya ayrilan en fazla sure (ms). Yuksek deger hizli tarar ama FPS dusurebilir.")
-        .defaultValue(4)
+        .defaultValue(6)
         .range(1, 20)
         .sliderRange(1, 12)
         .build()
@@ -119,7 +136,7 @@ public class BaseFinderESP extends Module {
 
     private final Setting<Integer> maxRender = sgRender.add(new IntSetting.Builder()
         .name("maks-cizim")
-        .description("Ayni anda cizilecek en fazla blok sayisi.")
+        .description("Ayni anda cizilecek en fazla blok sayisi. Limit dolunca en yakin bloklar cizilir.")
         .defaultValue(3000)
         .range(100, 20000)
         .sliderRange(100, 10000)
@@ -146,6 +163,7 @@ public class BaseFinderESP extends Module {
     private final Map<Long, List<BlockPos>> found = new HashMap<>();
     private final Set<Long> alerted = new HashSet<>();
     private final ScanLoop loop = new ScanLoop();
+    private final PosCache cache = new PosCache();
 
     public BaseFinderESP() {
         super(MenemenAddon.CATEGORY, "base-finder-esp",
@@ -164,14 +182,27 @@ public class BaseFinderESP extends Module {
 
     private void reset() {
         loop.reset();
+        cache.clear();
         found.clear();
         alerted.clear();
     }
 
-    @EventHandler
-    private void onTick(TickEvent.Post event) {
+    private Map<Block, Integer> buildWeights() {
         Map<Block, Integer> weights = new HashMap<>();
         for (Block b : blocks.get()) weights.put(b, 1);
+
+        EnumSet<Unnatural.Cat> extra = EnumSet.noneOf(Unnatural.Cat.class);
+        if (includeBuilding.get()) extra.add(Unnatural.Cat.YAPI);
+        if (includeValuable.get()) extra.add(Unnatural.Cat.DEGERLI);
+        if (!extra.isEmpty()) {
+            for (Block b : Unnatural.weights(extra).keySet()) weights.putIfAbsent(b, 1);
+        }
+        return weights;
+    }
+
+    @EventHandler
+    private void onTick(TickEvent.Post event) {
+        Map<Block, Integer> weights = buildWeights();
 
         int lo = Math.min(minY.get(), maxY.get());
         int hi = Math.max(minY.get(), maxY.get());
@@ -201,20 +232,15 @@ public class BaseFinderESP extends Module {
 
         Color side = sideColor.get();
         Color line = lineColor.get();
-        int drawn = 0;
-        int limit = maxRender.get();
 
-        for (List<BlockPos> list : found.values()) {
-            for (BlockPos pos : list) {
-                if (drawn++ >= limit) return;
-                event.renderer.box(pos, side, line, shapeMode.get(), 0);
-                if (tracers.get()) {
-                    event.renderer.line(
-                        RenderUtils.center.x, RenderUtils.center.y, RenderUtils.center.z,
-                        pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
-                        line
-                    );
-                }
+        for (BlockPos pos : cache.nearest(mc, found.values(), maxRender.get())) {
+            event.renderer.box(pos, side, line, shapeMode.get(), 0);
+            if (tracers.get()) {
+                event.renderer.line(
+                    RenderUtils.center.x, RenderUtils.center.y, RenderUtils.center.z,
+                    pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
+                    line
+                );
             }
         }
     }

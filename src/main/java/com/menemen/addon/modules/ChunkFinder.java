@@ -1,9 +1,9 @@
 package com.menemen.addon.modules;
 
 import com.menemen.addon.MenemenAddon;
-import com.menemen.addon.utils.BaseBlocks;
 import com.menemen.addon.utils.BlockScan;
 import com.menemen.addon.utils.ScanLoop;
+import com.menemen.addon.utils.Unnatural;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -12,31 +12,38 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.Block;
-import net.minecraft.util.math.ChunkPos;
 
 import java.util.*;
 
 /**
- * Chunk Finder: icinde secilen bloklardan yeterince cok bulunan chunklari kutu ile isaretler.
- * Hangi chunkta yapi oldugunu tek bakista gormek icin.
+ * Chunk Finder: secilen kategorilerdeki bloklardan yeterince cok bulunan chunklari kutu ile
+ * isaretler. Kategoriler blok kayit defterinden otomatik cikarilir (depolama, islevsel, redstone,
+ * degerli bloklar, yapi bloklari, isik).
  */
 public class ChunkFinder extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgCats = settings.createGroup("Kategoriler");
     private final SettingGroup sgRender = settings.createGroup("Render");
 
-    private final Setting<List<Block>> blocks = sgGeneral.add(new BlockListSetting.Builder()
-        .name("bloklar")
-        .description("Sayilacak bloklar.")
-        .defaultValue(BaseBlocks.all())
-        .build()
-    );
+    private final Setting<Boolean> depo = sgCats.add(new BoolSetting.Builder()
+        .name("depolama").description("Sandik, barrel, shulker.").defaultValue(true).build());
+    private final Setting<Boolean> islev = sgCats.add(new BoolSetting.Builder()
+        .name("islevsel").description("Firin, hopper, crafting table, yatak, anvil, beacon...").defaultValue(true).build());
+    private final Setting<Boolean> redstone = sgCats.add(new BoolSetting.Builder()
+        .name("redstone").description("Piston, observer, lamba, tnt...").defaultValue(true).build());
+    private final Setting<Boolean> degerli = sgCats.add(new BoolSetting.Builder()
+        .name("degerli-bloklar").description("Elmas, netherite, altin, demir blogu...").defaultValue(true).build());
+    private final Setting<Boolean> yapi = sgCats.add(new BoolSetting.Builder()
+        .name("yapi-bloklari").description("Tahta, tugla, cam, beton, yun, kapi, merdiven...").defaultValue(false).build());
+    private final Setting<Boolean> isik = sgCats.add(new BoolSetting.Builder()
+        .name("isik").description("Mesale ve fener.").defaultValue(false).build());
 
     private final Setting<Integer> threshold = sgGeneral.add(new IntSetting.Builder()
-        .name("esik")
-        .description("Bir chunkun isaretlenmesi icin en az blok sayisi.")
-        .defaultValue(5)
-        .range(1, 500)
-        .sliderRange(1, 100)
+        .name("puan-esigi")
+        .description("Bir chunkun isaretlenmesi icin en az puan (depolama ve islevsel 3, redstone ve degerli 2, digerleri 1).")
+        .defaultValue(8)
+        .range(1, 1000)
+        .sliderRange(1, 200)
         .build()
     );
 
@@ -69,6 +76,14 @@ public class ChunkFinder extends Module {
         .defaultValue(16)
         .range(1, 64)
         .sliderRange(1, 32)
+        .build()
+    );
+
+    private final Setting<Integer> budgetMs = sgGeneral.add(new IntSetting.Builder()
+        .name("tarama-butcesi-ms")
+        .defaultValue(6)
+        .range(1, 20)
+        .sliderRange(1, 12)
         .build()
     );
 
@@ -105,7 +120,7 @@ public class ChunkFinder extends Module {
         .build()
     );
 
-    private record Hit(int x0, int z0, int minY, int maxY, int count) {}
+    private record Hit(int x0, int z0, int minY, int maxY, int score) {}
 
     private final Map<Long, Hit> hits = new HashMap<>();
     private final Set<Long> alerted = new HashSet<>();
@@ -113,7 +128,7 @@ public class ChunkFinder extends Module {
 
     public ChunkFinder() {
         super(MenemenAddon.CATEGORY, "chunk-finder",
-            "Secilen bloklardan cok iceren chunklari kutu ile isaretler.");
+            "Secilen blok kategorilerinden cok iceren chunklari kutu ile isaretler.");
     }
 
     @Override
@@ -132,29 +147,41 @@ public class ChunkFinder extends Module {
         alerted.clear();
     }
 
+    private EnumSet<Unnatural.Cat> enabledCats() {
+        EnumSet<Unnatural.Cat> s = EnumSet.noneOf(Unnatural.Cat.class);
+        if (depo.get()) s.add(Unnatural.Cat.DEPO);
+        if (islev.get()) s.add(Unnatural.Cat.ISLEV);
+        if (redstone.get()) s.add(Unnatural.Cat.REDSTONE);
+        if (degerli.get()) s.add(Unnatural.Cat.DEGERLI);
+        if (yapi.get()) s.add(Unnatural.Cat.YAPI);
+        if (isik.get()) s.add(Unnatural.Cat.ISIK);
+        return s;
+    }
+
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        loop.tick(mc, chunkRadius.get(), chunksPerTick.get(), rescanTicks.get(),
+        Map<Block, Integer> weights = Unnatural.weights(enabledCats());
+        int lo = Math.min(minY.get(), maxY.get());
+        int hi = Math.max(minY.get(), maxY.get());
+
+        loop.tick(mc, chunkRadius.get(), chunksPerTick.get(), rescanTicks.get(), budgetMs.get(),
             key -> {
                 hits.remove(key);
                 alerted.remove(key);
             },
             (cp, chunk) -> {
-                Map<Block, Integer> weights = new HashMap<>();
-                for (Block b : blocks.get()) weights.put(b, 1);
-
-                int lo = Math.min(minY.get(), maxY.get());
-                int hi = Math.max(minY.get(), maxY.get());
-                BlockScan.Result r = BlockScan.scan(chunk, cp, weights, lo, hi);
+                BlockScan.Result r = BlockScan.scan(chunk, cp, weights, lo, hi, false);
 
                 long key = cp.toLong();
-                if (r.count >= threshold.get()) {
-                    hits.put(key, new Hit(cp.getStartX(), cp.getStartZ(), r.minY, r.maxY, r.count));
+                if (r.score >= threshold.get()) {
+                    hits.put(key, new Hit(cp.getStartX(), cp.getStartZ(), r.minY, r.maxY, r.score));
                     if (alert.get() && alerted.add(key)) {
-                        info("Chunk (%d, %d): %d blok, Y %d..%d", cp.getStartX(), cp.getStartZ(), r.count, r.minY, r.maxY);
+                        info("Chunk (%d, %d): puan %d (%d blok), Y %d..%d",
+                            cp.getStartX(), cp.getStartZ(), r.score, r.count, r.minY, r.maxY);
                     }
                 } else {
                     hits.remove(key);
+                    alerted.remove(key);
                 }
             }
         );

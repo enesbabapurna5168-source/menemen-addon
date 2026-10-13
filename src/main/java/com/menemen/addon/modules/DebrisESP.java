@@ -2,6 +2,7 @@ package com.menemen.addon.modules;
 
 import com.menemen.addon.MenemenAddon;
 import com.menemen.addon.utils.BlockScan;
+import com.menemen.addon.utils.PosCache;
 import com.menemen.addon.utils.ScanLoop;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -57,6 +58,14 @@ public class DebrisESP extends Module {
         .build()
     );
 
+    private final Setting<Integer> budgetMs = sgGeneral.add(new IntSetting.Builder()
+        .name("tarama-butcesi-ms")
+        .defaultValue(6)
+        .range(1, 20)
+        .sliderRange(1, 12)
+        .build()
+    );
+
     private final Setting<Integer> rescanTicks = sgGeneral.add(new IntSetting.Builder()
         .name("yeniden-tarama")
         .defaultValue(200)
@@ -89,8 +98,17 @@ public class DebrisESP extends Module {
         .build()
     );
 
+    private final Setting<Integer> maxRender = sgRender.add(new IntSetting.Builder()
+        .name("maks-cizim")
+        .defaultValue(3000)
+        .range(100, 20000)
+        .sliderRange(100, 10000)
+        .build()
+    );
+
     private final Map<Long, List<BlockPos>> found = new HashMap<>();
     private final ScanLoop loop = new ScanLoop();
+    private final PosCache cache = new PosCache();
     private final Map<Block, Integer> weights = new HashMap<>();
 
     public DebrisESP() {
@@ -102,22 +120,25 @@ public class DebrisESP extends Module {
     @Override
     public void onActivate() {
         loop.reset();
+        cache.clear();
         found.clear();
     }
 
     @Override
     public void onDeactivate() {
         loop.reset();
+        cache.clear();
         found.clear();
     }
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        loop.tick(mc, chunkRadius.get(), chunksPerTick.get(), rescanTicks.get(),
+        int lo = Math.min(minY.get(), maxY.get());
+        int hi = Math.max(minY.get(), maxY.get());
+
+        loop.tick(mc, chunkRadius.get(), chunksPerTick.get(), rescanTicks.get(), budgetMs.get(),
             found::remove,
             (cp, chunk) -> {
-                int lo = Math.min(minY.get(), maxY.get());
-                int hi = Math.max(minY.get(), maxY.get());
                 BlockScan.Result r = BlockScan.scan(chunk, cp, weights, lo, hi);
 
                 long key = cp.toLong();
@@ -129,16 +150,16 @@ public class DebrisESP extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        for (List<BlockPos> list : found.values()) {
-            for (BlockPos pos : list) {
-                event.renderer.box(pos, sideColor.get(), lineColor.get(), shapeMode.get(), 0);
-                if (tracers.get()) {
-                    event.renderer.line(
-                        RenderUtils.center.x, RenderUtils.center.y, RenderUtils.center.z,
-                        pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
-                        lineColor.get()
-                    );
-                }
+        if (found.isEmpty()) return;
+
+        for (BlockPos pos : cache.nearest(mc, found.values(), maxRender.get())) {
+            event.renderer.box(pos, sideColor.get(), lineColor.get(), shapeMode.get(), 0);
+            if (tracers.get()) {
+                event.renderer.line(
+                    RenderUtils.center.x, RenderUtils.center.y, RenderUtils.center.z,
+                    pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
+                    lineColor.get()
+                );
             }
         }
     }
