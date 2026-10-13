@@ -7,7 +7,6 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.systems.modules.render.Freecam;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.client.render.Camera;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -69,7 +68,8 @@ public class FreecamMine extends Module {
     private void onTick(TickEvent.Post event) {
         if (mc.player == null || mc.world == null || mc.interactionManager == null) return;
 
-        if (!Modules.get().isActive(Freecam.class)) {
+        Freecam freecam = Modules.get().get(Freecam.class);
+        if (freecam == null || !freecam.isActive()) {
             stop();
             return;
         }
@@ -78,9 +78,9 @@ public class FreecamMine extends Module {
             return;
         }
 
-        Camera camera = mc.gameRenderer.getCamera();
-        Vec3d start = camera.getPos();
-        Vec3d dir = Vec3d.fromPolar(camera.getPitch(), camera.getYaw());
+        // Kamera konumu ve acisi Meteor'un Freecam modulunden okunur.
+        Vec3d start = new Vec3d(freecam.pos.x, freecam.pos.y, freecam.pos.z);
+        Vec3d dir = Vec3d.fromPolar((float) freecam.pitch, (float) freecam.yaw);
         Vec3d end = start.add(dir.multiply(cameraRange.get()));
 
         BlockHitResult hit = mc.world.raycast(new RaycastContext(

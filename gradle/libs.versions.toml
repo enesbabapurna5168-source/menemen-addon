@@ -1,7 +1,7 @@
 # NOT: Bu sürüm numaraları 1.21.11 için bellekten yazıldı, ağ engeli yüzünden doğrulanamadı.
 # Derleme hata verirse https://maven.meteordev.org/ ve https://fabricmc.net/develop/ adreslerinden güncelleyin.
 [versions]
-mod-version = "0.1.0"
+mod-version = "0.3.0"
 jdk = "21"
 minecraft = "1.21.11"
 yarn-mappings = "1.21.11+build.1"
