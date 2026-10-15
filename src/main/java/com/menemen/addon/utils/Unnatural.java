@@ -3,6 +3,8 @@ package com.menemen.addon.utils;
 import net.minecraft.block.Block;
 import net.minecraft.registry.Registries;
 
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -89,13 +91,26 @@ public final class Unnatural {
         };
     }
 
-    /** Verilen kategorilerdeki tum bloklarin agirlik haritasi. */
+    private static final Map<Set<Cat>, Map<Block, Integer>> CACHE = new HashMap<>();
+
+    /**
+     * Verilen kategorilerdeki tum bloklarin agirlik haritasi. Sonuc onbellege alinir ve degistirilemez
+     * (modullerin her tickte yeniden olusturmasi gerekmez).
+     */
     public static Map<Block, Integer> weights(Set<Cat> enabled) {
+        EnumSet<Cat> key = EnumSet.noneOf(Cat.class);
+        key.addAll(enabled);
+
+        Map<Block, Integer> cached = CACHE.get(key);
+        if (cached != null) return cached;
+
         Map<Block, Integer> out = new HashMap<>();
         for (Map.Entry<Block, Cat> e : CATS.entrySet()) {
-            if (enabled.contains(e.getValue())) out.put(e.getKey(), WEIGHTS.get(e.getKey()));
+            if (key.contains(e.getValue())) out.put(e.getKey(), WEIGHTS.get(e.getKey()));
         }
-        return out;
+        Map<Block, Integer> result = Collections.unmodifiableMap(out);
+        CACHE.put(key, result);
+        return result;
     }
 
     public static Cat categoryOf(Block block) {

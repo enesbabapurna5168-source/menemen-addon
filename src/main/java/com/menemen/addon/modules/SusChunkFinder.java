@@ -2,6 +2,7 @@ package com.menemen.addon.modules;
 
 import com.menemen.addon.MenemenAddon;
 import com.menemen.addon.utils.BlockScan;
+import com.menemen.addon.utils.Findings;
 import com.menemen.addon.utils.ScanLoop;
 import com.menemen.addon.utils.Unnatural;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
@@ -22,7 +23,7 @@ import java.util.*;
  *
  * Mesale ve fener sadece "yeralti-max-y" altinda sayilir; yuzeyde dogal olarak da bulunurlar.
  */
-public class SusChunkFinder extends Module {
+public class SusChunkFinder extends Module implements Findings.Source {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgCats = settings.createGroup("Kategoriler");
     private final SettingGroup sgRender = settings.createGroup("Render");
@@ -64,6 +65,13 @@ public class SusChunkFinder extends Module {
         .defaultValue(40)
         .range(-64, 320)
         .sliderRange(-64, 128)
+        .build()
+    );
+
+    private final Setting<Boolean> fullHeight = sgGeneral.add(new BoolSetting.Builder()
+        .name("tum-yukseklik")
+        .description("Min/max Y ayarlarini yok sayip dunyanin en dibinden (-64 bedrock) en tepesine kadar tum katmanlari tara.")
+        .defaultValue(true)
         .build()
     );
 
@@ -145,10 +153,12 @@ public class SusChunkFinder extends Module {
     private final Map<Long, Hit> hits = new HashMap<>();
     private final Set<Long> alerted = new HashSet<>();
     private final ScanLoop loop = new ScanLoop();
+    private int lastSig;
 
     public SusChunkFinder() {
         super(MenemenAddon.CATEGORY, "sus-chunk-finder",
             "Dogal olmayan yapi izleri tasiyan supheli chunklari puanlayip isaretler.");
+        Findings.register(this);
     }
 
     @Override
@@ -162,6 +172,7 @@ public class SusChunkFinder extends Module {
     }
 
     private void reset() {
+        lastSig = 0;
         loop.reset();
         hits.clear();
         alerted.clear();
@@ -180,13 +191,24 @@ public class SusChunkFinder extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
+        // Ayar degisince eski sonuclari atip hemen yeniden tara.
+        int sig = Objects.hash(mainCats(), isik.get(), threshold.get(), minCategories.get(),
+            undergroundMaxY.get(), fullHeight.get(), minY.get(), maxY.get());
+        if (sig != lastSig) {
+            if (lastSig != 0) {
+                loop.reset();
+                hits.clear();
+            }
+            lastSig = sig;
+        }
+
         Map<Block, Integer> mainWeights = Unnatural.weights(mainCats());
         Map<Block, Integer> lightWeights = isik.get()
             ? Unnatural.weights(EnumSet.of(Unnatural.Cat.ISIK))
             : Collections.<Block, Integer>emptyMap();
 
-        int lo = Math.min(minY.get(), maxY.get());
-        int hi = Math.max(minY.get(), maxY.get());
+        int lo = fullHeight.get() ? -4096 : Math.min(minY.get(), maxY.get());
+        int hi = fullHeight.get() ? 4096 : Math.max(minY.get(), maxY.get());
         int lightHi = Math.min(hi, undergroundMaxY.get());
 
         loop.tick(mc, chunkRadius.get(), chunksPerTick.get(), rescanTicks.get(), budgetMs.get(),
@@ -231,7 +253,14 @@ public class SusChunkFinder extends Module {
     }
 
     @Override
+    public Map<Long, Integer> chunkScores() {
+        Map<Long, Integer> out = new HashMap<>();
+        for (Map.Entry<Long, Hit> e : hits.entrySet()) out.put(e.getKey(), e.getValue().score());
+        return out;
+    }
+
+    @Override
     public String getInfoString() {
-        return String.valueOf(hits.size());
+        return hits.size() + " (" + loop.scannedCount() + "/" + loop.loadedCount() + ")";
     }
 }

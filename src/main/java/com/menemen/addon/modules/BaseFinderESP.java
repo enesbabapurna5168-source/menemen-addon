@@ -3,6 +3,7 @@ package com.menemen.addon.modules;
 import com.menemen.addon.MenemenAddon;
 import com.menemen.addon.utils.BaseBlocks;
 import com.menemen.addon.utils.BlockScan;
+import com.menemen.addon.utils.CatColors;
 import com.menemen.addon.utils.PosCache;
 import com.menemen.addon.utils.ScanLoop;
 import com.menemen.addon.utils.Unnatural;
@@ -127,6 +128,13 @@ public class BaseFinderESP extends Module {
         .build()
     );
 
+    private final Setting<Boolean> categoryColors = sgRender.add(new BoolSetting.Builder()
+        .name("kategori-renkleri")
+        .description("Bloklari kategorisine gore renklendir (depo turuncu, islevsel mavi, redstone kirmizi, degerli pembe).")
+        .defaultValue(true)
+        .build()
+    );
+
     private final Setting<Boolean> tracers = sgRender.add(new BoolSetting.Builder()
         .name("tracer")
         .description("Bulunan bloklara cizgi cek.")
@@ -164,6 +172,8 @@ public class BaseFinderESP extends Module {
     private final Set<Long> alerted = new HashSet<>();
     private final ScanLoop loop = new ScanLoop();
     private final PosCache cache = new PosCache();
+    private Map<Block, Integer> weights;
+    private int lastSig;
 
     public BaseFinderESP() {
         super(MenemenAddon.CATEGORY, "base-finder-esp",
@@ -181,6 +191,8 @@ public class BaseFinderESP extends Module {
     }
 
     private void reset() {
+        lastSig = 0;
+        weights = null;
         loop.reset();
         cache.clear();
         found.clear();
@@ -202,10 +214,21 @@ public class BaseFinderESP extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        Map<Block, Integer> weights = buildWeights();
-
         int lo = Math.min(minY.get(), maxY.get());
         int hi = Math.max(minY.get(), maxY.get());
+
+        // Ayar degisince agirlik haritasini yenile ve hemen yeniden tara (her tick kurmak yerine).
+        int sig = Objects.hash(blocks.get(), includeBuilding.get(), includeValuable.get(), lo, hi);
+        if (sig != lastSig || weights == null) {
+            weights = buildWeights();
+            if (lastSig != 0) {
+                loop.reset();
+                found.clear();
+                cache.clear();
+            }
+            lastSig = sig;
+        }
+        final Map<Block, Integer> w = weights;
 
         loop.tick(mc, chunkRadius.get(), chunksPerTick.get(), rescanTicks.get(), budgetMs.get(),
             key -> {
@@ -213,7 +236,7 @@ public class BaseFinderESP extends Module {
                 alerted.remove(key);
             },
             (cp, chunk) -> {
-                BlockScan.Result r = BlockScan.scan(chunk, cp, weights, lo, hi);
+                BlockScan.Result r = BlockScan.scan(chunk, cp, w, lo, hi);
 
                 long key = cp.toLong();
                 if (r.positions.isEmpty()) found.remove(key);
@@ -233,13 +256,28 @@ public class BaseFinderESP extends Module {
         Color side = sideColor.get();
         Color line = lineColor.get();
 
+        if (mc.world == null) return;
+
         for (BlockPos pos : cache.nearest(mc, found.values(), maxRender.get())) {
-            event.renderer.box(pos, side, line, shapeMode.get(), 0);
+            var state = mc.world.getBlockState(pos);
+            if (state.isAir()) continue; // kirilan blogun kutusu kalmasin
+
+            Color s = side;
+            Color l = line;
+            if (categoryColors.get()) {
+                Unnatural.Cat cat = Unnatural.categoryOf(state.getBlock());
+                if (cat != null) {
+                    s = CatColors.side(cat);
+                    l = CatColors.line(cat);
+                }
+            }
+
+            event.renderer.box(pos, s, l, shapeMode.get(), 0);
             if (tracers.get()) {
                 event.renderer.line(
                     RenderUtils.center.x, RenderUtils.center.y, RenderUtils.center.z,
                     pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
-                    line
+                    l
                 );
             }
         }

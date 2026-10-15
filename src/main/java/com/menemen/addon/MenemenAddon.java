@@ -4,6 +4,10 @@ import com.menemen.addon.modules.BaseFinderESP;
 import com.menemen.addon.modules.ChunkFinder;
 import com.menemen.addon.modules.DebrisESP;
 import com.menemen.addon.modules.FreecamMine;
+import com.menemen.addon.modules.MenemenFinder;
+import com.menemen.addon.modules.NetheriteFinder;
+import com.menemen.addon.modules.PrimeChunkFinder;
+import com.menemen.addon.modules.RegionMap;
 import com.menemen.addon.modules.MenemenDebug;
 import com.menemen.addon.modules.RtpBaseFinder;
 import com.menemen.addon.modules.SeedChunkFinder;
@@ -30,6 +34,10 @@ public class MenemenAddon extends MeteorAddon {
         Modules.get().add(new RtpBaseFinder());
         Modules.get().add(new SeedChunkFinder());
         Modules.get().add(new FreecamMine());
+        Modules.get().add(new NetheriteFinder());
+        Modules.get().add(new PrimeChunkFinder());
+        Modules.get().add(new RegionMap());
+        Modules.get().add(new MenemenFinder());
     }
 
     @Override

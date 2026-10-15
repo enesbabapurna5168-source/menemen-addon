@@ -2,6 +2,7 @@ package com.menemen.addon.modules;
 
 import com.menemen.addon.MenemenAddon;
 import com.menemen.addon.utils.BlockScan;
+import com.menemen.addon.utils.Findings;
 import com.menemen.addon.utils.ScanLoop;
 import com.menemen.addon.utils.Unnatural;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
@@ -20,7 +21,7 @@ import java.util.*;
  * isaretler. Kategoriler blok kayit defterinden otomatik cikarilir (depolama, islevsel, redstone,
  * degerli bloklar, yapi bloklari, isik).
  */
-public class ChunkFinder extends Module {
+public class ChunkFinder extends Module implements Findings.Source {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgCats = settings.createGroup("Kategoriler");
     private final SettingGroup sgRender = settings.createGroup("Render");
@@ -44,6 +45,13 @@ public class ChunkFinder extends Module {
         .defaultValue(8)
         .range(1, 1000)
         .sliderRange(1, 200)
+        .build()
+    );
+
+    private final Setting<Boolean> fullHeight = sgGeneral.add(new BoolSetting.Builder()
+        .name("tum-yukseklik")
+        .description("Min/max Y ayarlarini yok sayip dunyanin en dibinden (-64 bedrock) en tepesine kadar tum katmanlari tara.")
+        .defaultValue(true)
         .build()
     );
 
@@ -125,10 +133,12 @@ public class ChunkFinder extends Module {
     private final Map<Long, Hit> hits = new HashMap<>();
     private final Set<Long> alerted = new HashSet<>();
     private final ScanLoop loop = new ScanLoop();
+    private int lastSig;
 
     public ChunkFinder() {
         super(MenemenAddon.CATEGORY, "chunk-finder",
             "Secilen blok kategorilerinden cok iceren chunklari kutu ile isaretler.");
+        Findings.register(this);
     }
 
     @Override
@@ -142,6 +152,7 @@ public class ChunkFinder extends Module {
     }
 
     private void reset() {
+        lastSig = 0;
         loop.reset();
         hits.clear();
         alerted.clear();
@@ -160,9 +171,18 @@ public class ChunkFinder extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
+        int sig = Objects.hash(enabledCats(), threshold.get(), fullHeight.get(), minY.get(), maxY.get());
+        if (sig != lastSig) {
+            if (lastSig != 0) {
+                loop.reset();
+                hits.clear();
+            }
+            lastSig = sig;
+        }
+
         Map<Block, Integer> weights = Unnatural.weights(enabledCats());
-        int lo = Math.min(minY.get(), maxY.get());
-        int hi = Math.max(minY.get(), maxY.get());
+        int lo = fullHeight.get() ? -4096 : Math.min(minY.get(), maxY.get());
+        int hi = fullHeight.get() ? 4096 : Math.max(minY.get(), maxY.get());
 
         loop.tick(mc, chunkRadius.get(), chunksPerTick.get(), rescanTicks.get(), budgetMs.get(),
             key -> {
@@ -199,7 +219,14 @@ public class ChunkFinder extends Module {
     }
 
     @Override
+    public Map<Long, Integer> chunkScores() {
+        Map<Long, Integer> out = new HashMap<>();
+        for (Map.Entry<Long, Hit> e : hits.entrySet()) out.put(e.getKey(), e.getValue().score());
+        return out;
+    }
+
+    @Override
     public String getInfoString() {
-        return String.valueOf(hits.size());
+        return hits.size() + " (" + loop.scannedCount() + "/" + loop.loadedCount() + ")";
     }
 }

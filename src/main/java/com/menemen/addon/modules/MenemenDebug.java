@@ -202,6 +202,7 @@ public class MenemenDebug extends Module {
         if (found.isEmpty()) return;
 
         for (BlockPos pos : cache.nearest(mc, found.values(), maxRender.get())) {
+            if (mc.world == null || mc.world.getBlockState(pos).isAir()) continue; // kirilan blogun kutusu kalmasin
             event.renderer.box(pos, sideColor.get(), lineColor.get(), shapeMode.get(), 0);
             if (tracers.get()) {
                 event.renderer.line(
