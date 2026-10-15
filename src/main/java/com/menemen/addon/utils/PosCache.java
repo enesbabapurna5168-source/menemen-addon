@@ -17,6 +17,7 @@ public class PosCache {
 
     private final List<BlockPos> sorted = new ArrayList<>();
     private long lastBuild;
+    private boolean lastDeep;
 
     public void clear() {
         sorted.clear();
@@ -24,13 +25,31 @@ public class PosCache {
     }
 
     public List<BlockPos> nearest(MinecraftClient mc, Collection<List<BlockPos>> source, int limit) {
+        return nearest(mc, source, limit, false);
+    }
+
+    /**
+     * @param deepFirst true ise en dusuk Y (bedrocka yakin) bloklar once cizilir, limit dolarsa
+     *                  yuzeye yakin bloklar kesilir.
+     */
+    public List<BlockPos> nearest(MinecraftClient mc, Collection<List<BlockPos>> source, int limit, boolean deepFirst) {
         long now = System.currentTimeMillis();
-        if (now - lastBuild > REBUILD_MS) {
+        if (now - lastBuild > REBUILD_MS || deepFirst != lastDeep) {
             lastBuild = now;
+            lastDeep = deepFirst;
             sorted.clear();
             for (List<BlockPos> list : source) sorted.addAll(list);
 
-            if (mc.player != null) {
+            if (deepFirst) {
+                final int ppx = mc.player != null ? mc.player.getBlockX() : 0;
+                final int ppz = mc.player != null ? mc.player.getBlockZ() : 0;
+                sorted.sort(Comparator.comparingInt((BlockPos p) -> p.getY())
+                    .thenComparingLong(p -> {
+                        long dx = p.getX() - ppx;
+                        long dz = p.getZ() - ppz;
+                        return dx * dx + dz * dz;
+                    }));
+            } else if (mc.player != null) {
                 final int px = mc.player.getBlockX();
                 final int py = mc.player.getBlockY();
                 final int pz = mc.player.getBlockZ();

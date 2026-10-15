@@ -28,9 +28,9 @@ public class DebrisESP extends Module {
 
     private final Setting<Integer> minY = sgGeneral.add(new IntSetting.Builder()
         .name("min-y")
-        .defaultValue(0)
+        .defaultValue(-64)
         .range(-64, 320)
-        .sliderRange(0, 128)
+        .sliderRange(-64, 128)
         .build()
     );
 

@@ -151,6 +151,13 @@ public class BaseFinderESP extends Module {
         .build()
     );
 
+    private final Setting<Boolean> deepFirst = sgRender.add(new BoolSetting.Builder()
+        .name("derin-oncelik")
+        .description("Cizim limiti dolunca yuzeye yakin degil, bedrocka yakin (en dusuk Y) bloklari once ciz.")
+        .defaultValue(true)
+        .build()
+    );
+
     private final Setting<Boolean> alert = sgAlert.add(new BoolSetting.Builder()
         .name("kume-uyarisi")
         .description("Bir chunkta cok sayida blok bulununca sohbette haber ver.")
@@ -258,7 +265,7 @@ public class BaseFinderESP extends Module {
 
         if (mc.world == null) return;
 
-        for (BlockPos pos : cache.nearest(mc, found.values(), maxRender.get())) {
+        for (BlockPos pos : cache.nearest(mc, found.values(), maxRender.get(), deepFirst.get())) {
             var state = mc.world.getBlockState(pos);
             if (state.isAir()) continue; // kirilan blogun kutusu kalmasin
 

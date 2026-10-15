@@ -115,6 +115,13 @@ public class MenemenDebug extends Module {
         .build()
     );
 
+    private final Setting<Boolean> deepFirst = sgRender.add(new BoolSetting.Builder()
+        .name("derin-oncelik")
+        .description("Cizim limiti dolunca bedrocka yakin (en dusuk Y) bloklari once ciz.")
+        .defaultValue(true)
+        .build()
+    );
+
     private final Setting<Boolean> chatDebug = sgDebug.add(new BoolSetting.Builder()
         .name("sohbet-istatistigi")
         .description("Tarama istatistiklerini sohbete yaz.")
@@ -194,6 +201,7 @@ public class MenemenDebug extends Module {
             ticksSinceReport = 0;
             info("[debug] chunk: %d | blok: %d | toplam tarama: %d | son tarama: %.2f ms | Y %d..%d",
                 found.size(), countBlocks(), totalScanned, lastScanNanos / 1_000_000.0, lo, hi);
+            info("[debug] Y katmanlari: %s", layerHistogram());
         }
     }
 
@@ -201,7 +209,7 @@ public class MenemenDebug extends Module {
     private void onRender(Render3DEvent event) {
         if (found.isEmpty()) return;
 
-        for (BlockPos pos : cache.nearest(mc, found.values(), maxRender.get())) {
+        for (BlockPos pos : cache.nearest(mc, found.values(), maxRender.get(), deepFirst.get())) {
             if (mc.world == null || mc.world.getBlockState(pos).isAir()) continue; // kirilan blogun kutusu kalmasin
             event.renderer.box(pos, sideColor.get(), lineColor.get(), shapeMode.get(), 0);
             if (tracers.get()) {
@@ -212,6 +220,20 @@ public class MenemenDebug extends Module {
                 );
             }
         }
+    }
+
+    /** Bulunan bloklarin Y bandlarina dagilimi. Derin bandlar 0 ise sunucu o katmanlari gondermiyor demektir. */
+    private String layerHistogram() {
+        int[] bands = new int[6]; // -64..-33, -32..-1, 0..31, 32..63, 64..127, 128+
+        for (List<BlockPos> list : found.values()) {
+            for (BlockPos p : list) {
+                int y = p.getY();
+                int i = y < -32 ? 0 : y < 0 ? 1 : y < 32 ? 2 : y < 64 ? 3 : y < 128 ? 4 : 5;
+                bands[i]++;
+            }
+        }
+        return "[-64..-33]=" + bands[0] + " [-32..-1]=" + bands[1] + " [0..31]=" + bands[2]
+            + " [32..63]=" + bands[3] + " [64..127]=" + bands[4] + " [128+]=" + bands[5];
     }
 
     private int countBlocks() {
