@@ -5,6 +5,7 @@ import com.menemen.addon.utils.BaseBlocks;
 import com.menemen.addon.utils.BlockScan;
 import com.menemen.addon.utils.PosCache;
 import com.menemen.addon.utils.ScanLoop;
+import com.menemen.addon.utils.Unnatural;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -15,6 +16,9 @@ import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.Block;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.ChunkSection;
 
 import java.util.*;
 
@@ -146,6 +150,7 @@ public class MenemenDebug extends Module {
     private long totalScanned;
     private long lastScanNanos;
     private int ticksSinceReport;
+    private int ticksRunning;
 
     public MenemenDebug() {
         super(MenemenAddon.CATEGORY, "menemen-debug",
@@ -155,6 +160,37 @@ public class MenemenDebug extends Module {
     @Override
     public void onActivate() {
         reset();
+        diagnose();
+    }
+
+    /** Oyuncunun durdugu chunk icin ham veri raporu: sunucu gercekten blok verisi gonderiyor mu? */
+    private void diagnose() {
+        if (mc.world == null || mc.player == null) return;
+
+        ChunkPos cp = mc.player.getChunkPos();
+        Chunk chunk = mc.world.getChunk(cp.x, cp.z);
+        if (chunk == null) {
+            info("[tani] oyuncunun chunku yuklu degil.");
+            return;
+        }
+
+        ChunkSection[] sections = chunk.getSectionArray();
+        int nonEmpty = 0;
+        int lowest = Integer.MAX_VALUE;
+        for (int i = 0; i < sections.length; i++) {
+            if (sections[i] == null || sections[i].isEmpty()) continue;
+            nonEmpty++;
+            lowest = Math.min(lowest, (chunk.getBottomSectionCoord() + i) << 4);
+        }
+
+        EnumSet<Unnatural.Cat> all = EnumSet.allOf(Unnatural.Cat.class);
+        int baseBlocks = BlockScan.scan(chunk, cp, Unnatural.weights(all), -4096, 4096, false).count;
+
+        info("[tani] chunk (%d, %d): %d/%d katman dolu, en alt dolu katman Y=%s, base blogu: %d.",
+            cp.x, cp.z, nonEmpty, sections.length,
+            lowest == Integer.MAX_VALUE ? "yok" : String.valueOf(lowest), baseBlocks);
+        info("[tani] yuklu chunk sayisi (yaricap %d): %d, tarama dongusu calisiyor: %s.",
+            chunkRadius.get(), loop.loadedCount(), ticksRunning > 0 ? "evet" : "hayir");
     }
 
     @Override
@@ -169,10 +205,12 @@ public class MenemenDebug extends Module {
         totalScanned = 0;
         lastScanNanos = 0;
         ticksSinceReport = 0;
+        ticksRunning = 0;
     }
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
+        ticksRunning++;
         long start = System.nanoTime();
 
         Map<Block, Integer> weights = new HashMap<>();
@@ -202,6 +240,7 @@ public class MenemenDebug extends Module {
             info("[debug] chunk: %d | blok: %d | toplam tarama: %d | son tarama: %.2f ms | Y %d..%d",
                 found.size(), countBlocks(), totalScanned, lastScanNanos / 1_000_000.0, lo, hi);
             info("[debug] Y katmanlari: %s", layerHistogram());
+            diagnose();
         }
     }
 
